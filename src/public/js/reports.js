@@ -69,7 +69,7 @@ async function submitReport(event) {
   // Objetivo: relacionar el archivo del formulario con upload.single().
   // Resultado esperado: Multer reconocerá la evidencia enviada por el navegador.
   if (evidence) {
-    formData.append('________', evidence);
+    formData.append('evidence', evidence);
   }
 
   reportFormStatus.textContent = 'Submitting report…';
@@ -79,7 +79,7 @@ async function submitReport(event) {
   // Resultado esperado: POST /api/reports recibirá correctamente multipart/form-data.
   const response = await fetch('/api/reports', {
     method: 'POST',
-    body: ________
+    body: formData
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));

@@ -31,7 +31,19 @@ async function playChannel() {
   // TODO 7:
   // Inicializa Shaka Player con `video`, carga `channel.streamUrl` y maneja sus estados.
   // TODO 8: muestra los estados Loading, Playing y Error según el resultado del reproductor.
-  showPlayerState('error', 'Playback is not implemented yet.');
+  showPlayerState('loading', 'Loading stream…');
+  try {
+    shaka.polyfill.installAll();
+    if (!shaka.Player.isBrowserSupported()) { showPlayerState('error', 'This browser cannot play the stream.'); return; }
+    if (player) await player.destroy();
+    player = new shaka.Player();
+    await player.attach(video);
+    player.addEventListener('error', () => showPlayerState('error', 'The stream could not be played.'));
+    await player.load(channel.streamUrl);
+    showPlayerState('playing', 'Playing');
+  } catch {
+    showPlayerState('error', 'The stream could not be played.');
+  }
 }
 async function loadChannel() {
   if (!channelId) { showPlayerState('error', 'Choose a channel from Home.'); return; }
@@ -39,7 +51,18 @@ async function loadChannel() {
   // TODO 5:
   // Consulta GET /api/channels/:id y asigna la respuesta a `channel`.
   // TODO 6: muestra nombre, país y categorías antes de cargar favoritos y reproducir.
-  showPlayerState('error', 'Channel loading is not implemented yet.');
+  const response = await fetch(`/api/channels/${channelId}`);
+  if (!response.ok) { showPlayerState('error', 'Channel was not found.'); return; }
+  ({ channel } = await response.json());
+  document.title = `${channel.name} | TV Hub`;
+  document.querySelector('#channel-name').textContent = channel.name;
+  document.querySelector('#channel-country').textContent = channel.country;
+  document.querySelector('#channel-categories').textContent = (channel.categories || []).join(' · ');
+  const logo = document.querySelector('#channel-logo');
+  logo.src = channel.logoUrl || '/images/channel-placeholder.svg';
+  logo.onerror = () => { logo.src = '/images/channel-placeholder.svg'; };
+  await loadFavoriteState();
+  await playChannel();
 }
 favoriteButton.addEventListener('click', toggleFavorite); retryButton.addEventListener('click', playChannel);
 if (channelId) reportProblemLink.href = `/reports.html?${new URLSearchParams({ channelId })}`;

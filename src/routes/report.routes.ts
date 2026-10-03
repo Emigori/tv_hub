@@ -13,6 +13,6 @@ reportRouter.get('/', authenticate, listReports);
 reportRouter.post(
   '/',
   authenticate,
-  upload.________('evidence'),
+  upload.single('evidence'),
   createReport
 );

@@ -45,14 +45,14 @@ export const createReport: RequestHandler = async (request, response) => {
     // Objetivo: construir la URL que se almacenará dentro del Report.
     // Resultado esperado: evidenceUrl tendrá una ruta como /uploads/reports/archivo.png.
     const evidenceUrl = file
-      ? `/uploads/reports/${file.________}`
+      ? `/uploads/reports/${file.filename}`
       : undefined;
 
     // TODO v4.5 3:
     // Completa el método del Model utilizado para crear un nuevo Report.
     // Objetivo: persistir los datos del reporte y la referencia de la evidencia.
     // Resultado esperado: MongoDB contendrá un nuevo Report con status OPEN.
-    const report = await Report.________({
+    const report = await Report.create({
       userId,
       channelId,
       reason,
@@ -72,7 +72,7 @@ export const listReports: RequestHandler = async (request, response) => {
   // Completa el método de Mongoose utilizado para consultar los Reports del usuario.
   // Objetivo: recuperar los reportes existentes del usuario autenticado.
   // Resultado esperado: GET /api/reports devolverá los Reports ordenados por fecha.
-  const reports = await Report.________({ userId: getUserId(request) })
+  const reports = await Report.find({ userId: getUserId(request) })
     .populate('channelId', 'name')
     .sort('-createdAt');
 
