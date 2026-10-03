@@ -10,11 +10,20 @@ import { Session } from '../src/models/session.model.js';
 import { User } from '../src/models/user.model.js';
 import { reportUploadsDirectory } from '../src/middleware/upload.js';
 import { emitReportCreated, emitReportUpdated } from '../src/realtime/socket.js';
+import { sendReportCreatedEmail, sendReportResolvedEmail } from '../src/notifications/report-email.js';
 
 jest.mock('../src/realtime/socket.js', () => ({
   emitReportCreated: jest.fn(),
   emitReportUpdated: jest.fn()
 }));
+
+jest.mock('../src/notifications/report-email.js', () => ({
+  sendReportCreatedEmail: jest.fn().mockResolvedValue(undefined),
+  sendReportResolvedEmail: jest.fn().mockResolvedValue(undefined)
+}));
+
+const createdEmail = sendReportCreatedEmail as jest.MockedFunction<typeof sendReportCreatedEmail>;
+const resolvedEmail = sendReportResolvedEmail as jest.MockedFunction<typeof sendReportResolvedEmail>;
 
 let mongo: MongoMemoryServer;
 let channelId: string;
@@ -93,7 +102,68 @@ test('an authenticated user can create and list a report', async () => {
   );
 });
 
-test.todo('keeps a persisted report when the report-created email delivery fails');
+test('sends the report-created email after the report is persisted', async () => {
+  const agent = await registerAgent('mail-created@example.com');
+  createdEmail.mockImplementationOnce(async (report) => {
+    // Cuando se intenta el envío, el Report ya existe en MongoDB.
+    expect(await Report.countDocuments({ description: report.description })).toBe(1);
+  });
+
+  await agent.post('/api/reports').field(reportFields('Email after persistence.')).expect(201);
+
+  expect(createdEmail).toHaveBeenCalledTimes(1);
+  expect(createdEmail).toHaveBeenCalledWith(
+    expect.objectContaining({ reason: 'VIDEO_PROBLEM', description: 'Email after persistence.', status: 'OPEN' }),
+    'Report Channel'
+  );
+});
+
+test('keeps a persisted report when the report-created email delivery fails', async () => {
+  const agent = await registerAgent('mail-failure@example.com');
+  createdEmail.mockRejectedValueOnce(new Error('SMTP is down'));
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  const created = await agent.post('/api/reports').field(reportFields('Mail fails but report stays.'))
+    .attach('evidence', Buffer.from('image'), { filename: 'kept.png', contentType: 'image/png' })
+    .expect(201);
+
+  expect(await Report.findById(created.body.report._id)).toEqual(expect.objectContaining({ status: 'OPEN' }));
+  await request(app).get(created.body.report.evidenceUrls[0]).expect(200);
+  expect(emitReportCreated).toHaveBeenCalledTimes(1);
+  consoleError.mockRestore();
+});
+
+test('resolution email is sent once, only after RESOLVED is persisted, and failures keep the resolution', async () => {
+  const owner = await registerAgent('mail-owner@example.com');
+  const created = await owner.post('/api/reports').field(reportFields()).expect(201);
+  const admin = await registerAgent('mail-admin@example.com');
+  await User.updateOne({ email: 'mail-admin@example.com' }, { role: 'ADMIN' });
+  await admin.post('/api/auth/login').send({ email: 'mail-admin@example.com', password: 'StrongPass123!' }).expect(200);
+
+  resolvedEmail.mockImplementationOnce(async () => {
+    const stored = await Report.findById(created.body.report._id);
+    expect(stored).toEqual(expect.objectContaining({ status: 'RESOLVED', resolvedAt: expect.any(Date) }));
+    throw new Error('SMTP is down');
+  });
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  await admin.patch(`/api/admin/reports/${created.body.report._id}/close`).expect(200);
+  expect(resolvedEmail).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'RESOLVED' }),
+    'Report Channel',
+    'mail-owner@example.com'
+  );
+  const stored = await Report.findById(created.body.report._id);
+  expect(stored?.status).toBe('RESOLVED');
+  expect(stored?.resolvedAt).toBeInstanceOf(Date);
+  expect(stored?.resolvedBy).toBeDefined();
+  expect(emitReportUpdated).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: 'RESOLVED' }));
+
+  // Cerrar de nuevo no reenvía el correo.
+  await admin.patch(`/api/admin/reports/${created.body.report._id}/close`).expect(200);
+  expect(resolvedEmail).toHaveBeenCalledTimes(1);
+  consoleError.mockRestore();
+});
 
 test('only an ADMIN can view the support report queue', async () => {
   const reporter = await registerAgent('support-reporter@example.com');
