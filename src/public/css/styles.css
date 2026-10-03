@@ -131,3 +131,14 @@ body.auth-body main.auth-layout { width: 100%; padding: 0; border-radius: 0; bac
   .auth-intro h1 { max-width: 500px; font-size: clamp(2.7rem, 13vw, 4.5rem); }
   .auth-panel { padding: 2.5rem 1.5rem; }
 }
+
+.report-evidence { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .5rem; }
+.report-actions { display: flex; gap: .5rem; margin-top: .8rem; }
+.report-item .report-delete { border-color: #9f4141; color: #f0b9b9; }
+.report-item .report-delete:hover { border-color: #f87171; background: #6b1212; color: #fff; }
+.report-item .report-status[data-status="IN_PROGRESS"] { background: #f59e0b33; color: #fcd34d; }
+.report-item .report-status[data-status="RESOLVED"] { background: #22c55e33; color: #86efac; }
+.report-edit-form { display: grid; gap: .75rem; }
+.report-edit-form label { display: grid; gap: .4rem; color: #d8e8ff; font-size: .85rem; font-weight: 700; }
+.report-edit-form select, .report-edit-form textarea { box-sizing: border-box; width: 100%; padding: .6rem; border: 1px solid #305687; border-radius: .45rem; background: #061a3c; color: #f8fbff; font: inherit; }
+.report-edit-form textarea { min-height: 90px; resize: vertical; }

@@ -38,8 +38,8 @@
             <label for="report-description">Description
               <textarea id="report-description" name="description" maxlength="1000" required></textarea>
             </label>
-            <label for="report-evidence">Evidence image (optional)
-              <input id="report-evidence" name="evidence" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
+            <label for="report-evidence">Evidence images (optional, up to 5)
+              <input id="report-evidence" name="evidence" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple />
             </label>
             <button type="submit">Submit report</button>
             <p id="report-form-status" class="form-status" aria-live="polite"></p>

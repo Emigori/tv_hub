@@ -86,8 +86,9 @@ test('an image evidence file is stored and exposed through its URL', async () =>
     description: 'The image is frozen.'
   }).attach('evidence', Buffer.from('image evidence'), { filename: 'evidence.png', contentType: 'image/png' }).expect(201);
 
-  expect(created.body.report.evidenceUrl).toMatch(/^\/uploads\/reports\/.+\.png$/);
-  await request(app).get(created.body.report.evidenceUrl).expect(200);
+  expect(created.body.report.evidenceUrls).toHaveLength(1);
+  expect(created.body.report.evidenceUrls[0]).toMatch(/^\/uploads\/reports\/.+\.png$/);
+  await request(app).get(created.body.report.evidenceUrls[0]).expect(200);
 });
 
 test('reports reject invalid report data and invalid files', async () => {
@@ -115,4 +116,71 @@ test('reports only list the current user reports', async () => {
   const listed = await firstUser.get('/api/reports').expect(200);
   expect(listed.body.reports).toHaveLength(1);
   expect(listed.body.reports[0].description).toBe('First report.');
+});
+
+test('a report can store several evidence images', async () => {
+  const agent = await registerAgent('multiple@example.com');
+  const created = await agent.post('/api/reports').field({ channelId, reason: 'VIDEO_PROBLEM', description: 'Several screenshots.' })
+    .attach('evidence', Buffer.from('one'), { filename: 'one.png', contentType: 'image/png' })
+    .attach('evidence', Buffer.from('two'), { filename: 'two.jpg', contentType: 'image/jpeg' })
+    .attach('evidence', Buffer.from('three'), { filename: 'three.webp', contentType: 'image/webp' })
+    .expect(201);
+
+  expect(created.body.report.evidenceUrls).toHaveLength(3);
+  for (const url of created.body.report.evidenceUrls) await request(app).get(url).expect(200);
+  expect((await readdir(reportUploadsDirectory)).filter((name) => name !== '.gitkeep')).toHaveLength(3);
+});
+
+test('reports reject more than five evidence images', async () => {
+  const agent = await registerAgent('toomany@example.com');
+  let pending = agent.post('/api/reports').field({ channelId, reason: 'OTHER', description: 'Too many images.' });
+  for (let index = 0; index < 6; index += 1) {
+    pending = pending.attach('evidence', Buffer.from(`image ${index}`), { filename: `${index}.png`, contentType: 'image/png' });
+  }
+  await pending.expect(400, { error: { code: 'UPLOAD_ERROR', message: 'You can attach up to 5 evidence images' } });
+  expect(await Report.countDocuments()).toBe(0);
+});
+
+test('a user can update their own report without creating a new document', async () => {
+  const agent = await registerAgent('update@example.com');
+  const created = await agent.post('/api/reports').field({ channelId, reason: 'OTHER', description: 'Original.' }).expect(201);
+
+  const updated = await agent.patch(`/api/reports/${created.body.report._id}`)
+    .send({ reason: 'AUDIO_PROBLEM', description: 'Updated description.', status: 'IN_PROGRESS' })
+    .expect(200);
+
+  expect(updated.body.report).toEqual(expect.objectContaining({
+    _id: created.body.report._id,
+    reason: 'AUDIO_PROBLEM',
+    description: 'Updated description.',
+    status: 'IN_PROGRESS'
+  }));
+  expect(await Report.countDocuments()).toBe(1);
+
+  await agent.patch(`/api/reports/${created.body.report._id}`).send({ status: 'CLOSED_FOREVER' }).expect(400, {
+    error: { code: 'INVALID_REPORT_STATUS', message: 'Report status is invalid' }
+  });
+});
+
+test('a user can delete their own report and its evidence files', async () => {
+  const agent = await registerAgent('delete@example.com');
+  const created = await agent.post('/api/reports').field({ channelId, reason: 'OTHER', description: 'Delete me.' })
+    .attach('evidence', Buffer.from('image'), { filename: 'image.png', contentType: 'image/png' })
+    .expect(201);
+
+  await agent.delete(`/api/reports/${created.body.report._id}`).expect(204);
+  expect(await Report.countDocuments()).toBe(0);
+  expect((await readdir(reportUploadsDirectory)).filter((name) => name !== '.gitkeep')).toHaveLength(0);
+  await agent.delete(`/api/reports/${created.body.report._id}`).expect(404);
+});
+
+test('users cannot update or delete reports from other users', async () => {
+  const owner = await registerAgent('owner@example.com');
+  const intruder = await registerAgent('intruder@example.com');
+  const created = await owner.post('/api/reports').field({ channelId, reason: 'OTHER', description: 'Private report.' }).expect(201);
+  const reportId = created.body.report._id;
+
+  await intruder.patch(`/api/reports/${reportId}`).send({ status: 'RESOLVED' }).expect(404);
+  await intruder.delete(`/api/reports/${reportId}`).expect(404);
+  expect(await Report.findById(reportId)).toEqual(expect.objectContaining({ status: 'OPEN' }));
 });
